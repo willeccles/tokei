@@ -1,4 +1,4 @@
-; 30 lines 9 code 14 comments 7 blanks
+; 36 lines 11 code 17 comments 8 blanks
 ; test program
 .program hello
 
@@ -26,4 +26,10 @@ static inline uint my_cool_function(uint a) {
 }
 %}
 
-; a comment after the C code
+% python {
+# a dummy python function to test passthrough
+def func():
+    return 5
+%}
+
+; a comment after the passthrough code

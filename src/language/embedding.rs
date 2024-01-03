@@ -19,8 +19,9 @@ pub static END_TEMPLATE: Lazy<Regex> = Lazy::new(|| Regex::new(r#"</template>"#)
 pub static STARTING_MARKDOWN_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r#"```\S+\s"#).unwrap());
 pub static ENDING_MARKDOWN_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r#"```\s?"#).unwrap());
 
-pub static START_PIO_CSDK: Lazy<Regex> = Lazy::new(|| Regex::new(r#"% c-sdk \{"#).unwrap());
-pub static END_PIO_CSDK: Lazy<Regex> = Lazy::new(|| Regex::new(r#"%}"#).unwrap());
+pub static START_PIO_PASSTHROUGH: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r#"% (c-sdk|python) \{"#).unwrap());
+pub static END_PIO_PASSTHROUGH: Lazy<Regex> = Lazy::new(|| Regex::new(r#"%}"#).unwrap());
 
 /// A memory of a regex matched.
 /// The values provided by `Self::start` and `Self::end` are in the same space as the
@@ -116,8 +117,8 @@ impl<'a> Markdown<'a> {
 }
 
 impl<'a> PioAsm<'a> {
-    pub fn starts_in_range(&'a self, start: usize, end: usize) -> Option<&Capture<'a>> {
-        filter_range(self.starts.as_ref()?, start, end).and_then(|mut it| it.next())
+    pub fn starts_in_range(&'a self, start: usize, end: usize) -> Option<impl Iterator<Item = &'a Capture<'a>>> {
+        filter_range(self.starts.as_ref()?, start, end)
     }
 }
 
@@ -185,7 +186,7 @@ impl<'a> RegexCache<'a> {
             }
             LanguageType::PioAsm => {
                 let pioasm = PioAsm {
-                    starts: save_captures(&START_PIO_CSDK, lines, start, end),
+                    starts: save_captures(&START_PIO_PASSTHROUGH, lines, start, end),
                 };
 
                 if pioasm.starts.is_some() {

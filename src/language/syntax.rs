@@ -8,7 +8,7 @@ use once_cell::sync::Lazy;
 
 use super::embedding::{
     RegexCache, RegexFamily, ENDING_MARKDOWN_REGEX, END_SCRIPT, END_STYLE, END_TEMPLATE,
-    END_PIO_CSDK,
+    END_PIO_PASSTHROUGH,
 };
 use crate::{stats::CodeStats, utils::ext::SliceExt, Config, LanguageType};
 
@@ -523,39 +523,42 @@ impl SyntaxCounter {
                 }
             }
             RegexFamily::PioAsm(pioasm) => {
-                // TODO: This logic is copied from Markdown. That is, it allows for unbalanced code
-                // blocks, which I don't think is valid. Not sure what the proper way to handle
-                // this is, though.
-                if !lines[start..end].contains_slice(b"% c-sdk {") {
-                    return None;
+                if let Some(mut captures) = pioasm.starts_in_range(start, end) {
+                    let start_of_code = captures.next().unwrap().end();
+                    let closing_tag = END_PIO_PASSTHROUGH.find(&lines[start_of_code..])?;
+                    let end_of_code = start_of_code + closing_tag.start();
+                    let end_of_code_block = start_of_code + closing_tag.end();
+                    // Python will be parsed out correctly; c-sdk will not be recognized as C, but
+                    // we can just default to C if nothing else matched.
+                    let language = captures
+                        .next()
+                        .and_then(|m| {
+                            LanguageType::from_str(
+                                &String::from_utf8_lossy(m.as_bytes().trim()).to_lowercase(),
+                            )
+                            .ok()
+                        })
+                        .unwrap_or(LanguageType::C);
+                    let passthrough_contents = &lines[start_of_code..end_of_code];
+                    if passthrough_contents.trim().is_empty() {
+                        return None;
+                    }
+
+                    let stats = language.parse_from_slice(
+                        passthrough_contents.trim_first_and_last_line_of_whitespace(),
+                        config,
+                    );
+
+                    let balanced = true;
+
+                    Some(FileContext::new(
+                        LanguageContext::PioAsm { balanced, language },
+                        end_of_code_block,
+                        stats,
+                    ))
+                } else {
+                    None
                 }
-
-                let opening_fence = pioasm.starts_in_range(start, end)?;
-                let start_of_code = opening_fence.end();
-                let closing_fence = END_PIO_CSDK.find(&lines[start_of_code..]);
-                if let Some(m) = &closing_fence {
-                    trace!("{:?}", String::from_utf8_lossy(m.as_bytes()));
-                }
-                let end_of_code = closing_fence
-                    .map_or_else(|| lines.len(), |fence| start_of_code + fence.start());
-                let end_of_code_block =
-                    closing_fence.map_or_else(|| lines.len(), |fence| start_of_code + fence.end());
-                let balanced = closing_fence.is_some();
-
-                let language = LanguageType::C;
-                trace!(
-                    "{} BLOCK: {:?}",
-                    language,
-                    String::from_utf8_lossy(&lines[start_of_code..end_of_code])
-                );
-                let stats =
-                    language.parse_from_slice(&lines[start_of_code..end_of_code].trim(), config);
-
-                Some(FileContext::new(
-                    LanguageContext::PioAsm { balanced, language },
-                    end_of_code_block,
-                    stats,
-                ))
             }
         }
     }
